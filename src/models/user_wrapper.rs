@@ -45,7 +45,7 @@ impl AutoRequestable for UserWrapper {
 
     fn create_table_request() -> String {
         r#"CREATE TABLE IF NOT EXISTS USERS (
-            user_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             first_name TEXT NOT NULL,
             last_name TEXT NOT NULL,
             usernames TEXT,
@@ -78,7 +78,7 @@ impl AutoRequestable for UserWrapper {
 
     fn from_row(row: &rusqlite::Row) -> Result<UserWrapper, rusqlite::Error> {
         Ok(UserWrapper(User {
-            id: row.get("user_id")?,
+            id: row.get("id")?,
             first_name: row.get("first_name")?,
             last_name: row.get("last_name")?,
             usernames: serde_json::from_str(&row.get::<_, String>("usernames")?).unwrap(),
@@ -109,10 +109,10 @@ impl AutoRequestable for UserWrapper {
         conn: &rusqlite::Connection,
     ) -> AlterResult<Option<Self>> {
         Ok(conn
-            .prepare(r#"SELECT * FROM USERS WHERE user_id = :user_id"#)?
+            .prepare(r#"SELECT * FROM USERS WHERE id = :id"#)?
             .query_row(
                 rusqlite::named_params! {
-                    r#":user_id"#: id,
+                    r#":id"#: id,
                 },
                 Self::from_row,
             )
@@ -131,7 +131,7 @@ impl AutoRequestable for UserWrapper {
     fn insert(&self, conn: &rusqlite::Connection) -> AlterResult<()> {
         conn.execute(
             r#"INSERT INTO USERS (
-            user_id,
+            id,
             first_name,
             last_name,
             usernames,
@@ -155,7 +155,7 @@ impl AutoRequestable for UserWrapper {
             language_code,
             added_to_attachment_menu
         ) VALUES (
-            :user_id,
+            :id,
             :first_name,
             :last_name,
             :usernames,
@@ -181,7 +181,7 @@ impl AutoRequestable for UserWrapper {
         )"#
             .into(),
             rusqlite::named_params! {
-                ":user_id": &self.0.id,
+                ":id": &self.0.id,
                 ":first_name": &self.0.first_name,
                 ":last_name": &self.0.last_name,
                 ":usernames": &serde_json::to_string(&self.0.usernames).unwrap(),
@@ -236,10 +236,10 @@ impl AutoRequestable for UserWrapper {
                 language_code = :language_code,
                 added_to_attachment_menu = :added_to_attachment_menu
             WHERE
-                user_id = :user_id"#
+                id = :id"#
                 .into(),
             rusqlite::named_params! {
-                ":user_id": &self.0.id,
+                ":id": &self.0.id,
                 ":first_name": &self.0.first_name,
                 ":last_name": &self.0.last_name,
                 ":usernames": &serde_json::to_string(&self.0.usernames).unwrap(),

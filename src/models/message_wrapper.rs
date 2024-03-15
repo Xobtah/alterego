@@ -35,7 +35,7 @@ impl AutoRequestable for MessageWrapper {
 
     fn create_table_request() -> String {
         r#"CREATE TABLE IF NOT EXISTS MESSAGES (
-            message_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             sender_id INTEGER NOT NULL,
             chat_id INTEGER NOT NULL,
             sending_state TEXT,
@@ -83,7 +83,7 @@ impl AutoRequestable for MessageWrapper {
 
     fn from_row(row: &rusqlite::Row) -> Result<MessageWrapper, rusqlite::Error> {
         Ok(MessageWrapper(Message {
-            id: row.get("message_id")?,
+            id: row.get("id")?,
             sender_id: serde_json::from_str(&row.get::<_, String>("sender_id")?).unwrap(),
             chat_id: row.get("chat_id")?,
             sending_state: serde_json::from_str(&row.get::<_, String>("sending_state")?).unwrap(),
@@ -131,10 +131,10 @@ impl AutoRequestable for MessageWrapper {
         conn: &rusqlite::Connection,
     ) -> AlterResult<Option<Self>> {
         Ok(conn
-            .prepare(r#"SELECT * FROM MESSAGES WHERE message_id = :message_id"#)?
+            .prepare(r#"SELECT * FROM MESSAGES WHERE id = :id"#)?
             .query_row(
                 rusqlite::named_params! {
-                    r#":message_id"#: id,
+                    r#":id"#: id,
                 },
                 Self::from_row,
             )
@@ -153,7 +153,7 @@ impl AutoRequestable for MessageWrapper {
     fn insert(&self, conn: &rusqlite::Connection) -> AlterResult<()> {
         conn.execute(
             r#"INSERT INTO MESSAGES (
-            message_id,
+            id,
             sender_id,
             chat_id,
             sending_state,
@@ -192,7 +192,7 @@ impl AutoRequestable for MessageWrapper {
             content,
             reply_markup
         ) VALUES (
-            :message_id,
+            :id,
             :sender_id,
             :chat_id,
             :sending_state,
@@ -233,7 +233,7 @@ impl AutoRequestable for MessageWrapper {
         )"#
             .into(),
             rusqlite::named_params! {
-                ":message_id": &self.0.id,
+                ":id": &self.0.id,
                 ":sender_id": &serde_json::to_string(&self.0.sender_id).unwrap(),
                 ":chat_id": &self.0.chat_id,
                 ":sending_state": &serde_json::to_string(&self.0.sending_state).unwrap(),
@@ -318,10 +318,10 @@ impl AutoRequestable for MessageWrapper {
                 content = :content,
                 reply_markup = :reply_markup
             WHERE
-                message_id = :message_id"#
+                id = :id"#
                 .into(),
             rusqlite::named_params! {
-                ":message_id": &self.0.id,
+                ":id": &self.0.id,
                 ":sender_id": &serde_json::to_string(&self.0.sender_id).unwrap(),
                 ":chat_id": &self.0.chat_id,
                 ":sending_state": &serde_json::to_string(&self.0.sending_state).unwrap(),
@@ -368,7 +368,7 @@ impl AutoRequestable for MessageWrapper {
 impl MessageWrapper {
     pub fn create_archive_table_request() -> String {
         r#"CREATE TABLE IF NOT EXISTS MESSAGES_ARCHIVE (
-            message_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             sender_id INTEGER NOT NULL,
             chat_id INTEGER NOT NULL,
             sending_state TEXT,
@@ -413,7 +413,7 @@ impl MessageWrapper {
     fn archive(&self, conn: &rusqlite::Connection) -> AlterResult<()> {
         conn.execute(
             r#"INSERT INTO MESSAGES_ARCHIVE (
-            message_id,
+            id,
             sender_id,
             chat_id,
             sending_state,
@@ -452,7 +452,7 @@ impl MessageWrapper {
             content,
             reply_markup
         ) VALUES (
-            :message_id,
+            :id,
             :sender_id,
             :chat_id,
             :sending_state,
@@ -493,7 +493,97 @@ impl MessageWrapper {
         )"#
             .into(),
             rusqlite::named_params! {
-                ":message_id": &self.0.id,
+                ":id": &self.0.id,
+                ":sender_id": &serde_json::to_string(&self.0.sender_id).unwrap(),
+                ":chat_id": &self.0.chat_id,
+                ":sending_state": &serde_json::to_string(&self.0.sending_state).unwrap(),
+                ":scheduling_state": &serde_json::to_string(&self.0.scheduling_state).unwrap(),
+                ":is_outgoing": &self.0.is_outgoing,
+                ":is_pinned": &self.0.is_pinned,
+                ":can_be_edited": &self.0.can_be_edited,
+                ":can_be_forwarded": &self.0.can_be_forwarded,
+                ":can_be_saved": &self.0.can_be_saved,
+                ":can_be_deleted_only_for_self": &self.0.can_be_deleted_only_for_self,
+                ":can_be_deleted_for_all_users": &self.0.can_be_deleted_for_all_users,
+                ":can_get_added_reactions": &self.0.can_get_added_reactions,
+                ":can_get_statistics": &self.0.can_get_statistics,
+                ":can_get_message_thread": &self.0.can_get_message_thread,
+                ":can_get_viewers": &self.0.can_get_viewers,
+                ":can_get_media_timestamp_links": &self.0.can_get_media_timestamp_links,
+                ":can_report_reactions": &self.0.can_report_reactions,
+                ":has_timestamped_media": &self.0.has_timestamped_media,
+                ":is_channel_post": &self.0.is_channel_post,
+                ":is_topic_message": &self.0.is_topic_message,
+                ":contains_unread_mention": &self.0.contains_unread_mention,
+                ":date": &self.0.date,
+                ":edit_date": &self.0.edit_date,
+                ":forward_info": &serde_json::to_string(&self.0.forward_info).unwrap(),
+                ":interaction_info": &serde_json::to_string(&self.0.interaction_info).unwrap(),
+                ":unread_reactions": &serde_json::to_string(&self.0.unread_reactions).unwrap(),
+                ":reply_to": &serde_json::to_string(&self.0.reply_to).unwrap(),
+                ":message_thread_id": &self.0.message_thread_id,
+                ":self_destruct_type": &serde_json::to_string(&self.0.self_destruct_type).unwrap(),
+                ":self_destruct_in": &self.0.self_destruct_in,
+                ":auto_delete_in": &self.0.auto_delete_in,
+                ":via_bot_user_id": &self.0.via_bot_user_id,
+                ":author_signature": &self.0.author_signature,
+                ":media_album_id": &self.0.media_album_id,
+                ":restriction_reason": &serde_json::to_string(&self.0.restriction_reason).unwrap(),
+                ":content": &serde_json::to_string(&self.0.content).unwrap(),
+                ":reply_markup": &serde_json::to_string(&self.0.reply_markup).unwrap(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn update_with_old_id(&self, conn: &rusqlite::Connection, old_id: i64) -> AlterResult<()> {
+        conn.execute(
+            r#"UPDATE MESSAGES
+            SET
+                id = :id,
+                sender_id = :sender_id,
+                chat_id = :chat_id,
+                sending_state = :sending_state,
+                scheduling_state = :scheduling_state,
+                is_outgoing = :is_outgoing,
+                is_pinned = :is_pinned,
+                can_be_edited = :can_be_edited,
+                can_be_forwarded = :can_be_forwarded,
+                can_be_saved = :can_be_saved,
+                can_be_deleted_only_for_self = :can_be_deleted_only_for_self,
+                can_be_deleted_for_all_users = :can_be_deleted_for_all_users,
+                can_get_added_reactions = :can_get_added_reactions,
+                can_get_statistics = :can_get_statistics,
+                can_get_message_thread = :can_get_message_thread,
+                can_get_viewers = :can_get_viewers,
+                can_get_media_timestamp_links = :can_get_media_timestamp_links,
+                can_report_reactions = :can_report_reactions,
+                has_timestamped_media = :has_timestamped_media,
+                is_channel_post = :is_channel_post,
+                is_topic_message = :is_topic_message,
+                contains_unread_mention = :contains_unread_mention,
+                date = :date,
+                edit_date = :edit_date,
+                forward_info = :forward_info,
+                interaction_info = :interaction_info,
+                unread_reactions = :unread_reactions,
+                reply_to = :reply_to,
+                message_thread_id = :message_thread_id,
+                self_destruct_type = :self_destruct_type,
+                self_destruct_in = :self_destruct_in,
+                auto_delete_in = :auto_delete_in,
+                via_bot_user_id = :via_bot_user_id,
+                author_signature = :author_signature,
+                media_album_id = :media_album_id,
+                restriction_reason = :restriction_reason,
+                content = :content,
+                reply_markup = :reply_markup
+            WHERE
+                id = :old_id"#
+                .into(),
+            rusqlite::named_params! {
+                ":old_id": old_id,
+                ":id": &self.0.id,
                 ":sender_id": &serde_json::to_string(&self.0.sender_id).unwrap(),
                 ":chat_id": &self.0.chat_id,
                 ":sending_state": &serde_json::to_string(&self.0.sending_state).unwrap(),
@@ -539,9 +629,9 @@ impl MessageWrapper {
     pub fn delete(&self, conn: &rusqlite::Connection) -> AlterResult<()> {
         self.archive(conn)?;
         conn.execute(
-            r#"DELETE FROM MESSAGES WHERE message_id = :message_id AND chat_id = :chat_id"#,
+            r#"DELETE FROM MESSAGES WHERE id = :id AND chat_id = :chat_id"#,
             rusqlite::named_params! {
-                ":message_id": &self.0.id,
+                ":id": &self.0.id,
                 ":chat_id": &self.0.chat_id,
             },
         )?;

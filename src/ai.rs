@@ -36,7 +36,6 @@ pub async fn run(
 ) -> AlterResult<()> {
     info!("Start listening for messages");
     let User::User(me) = functions::get_me(client_id).await.unwrap();
-
     let mut thoughts: HashMap<i64, oneshot::Sender<oneshot::Sender<()>>> = HashMap::new();
 
     loop {
@@ -79,15 +78,13 @@ pub async fn run(
 
                     let (interrupt_tx, interrupt_rx) = tokio::sync::oneshot::channel();
                     let chat_id = message.chat_id;
-
                     if message.chat_id < 0 {
-                        tokio::spawn(handle_group_message(model_name.clone(), message, client_id, interrupt_rx));
+                        // tokio::spawn(handle_group_message(model_name.clone(), message, client_id, interrupt_rx));
+                        continue;
                     } else {
-                        tokio::spawn(handle_private_message(db.clone(), model_name.clone(), me.id, message, client_id, interrupt_rx));
+                        tokio::spawn(cancelable_private_thought(db.clone(), model_name.clone(), me.id, message, client_id, interrupt_rx));
                     }
-
                     thoughts.insert(chat_id, interrupt_tx);
-
                     Ok(())
                 } as AlterResult<()>;
 
@@ -106,47 +103,47 @@ pub async fn run(
     Ok(())
 }
 
-async fn handle_group_message(
-    model_name: String,
-    message: Message,
-    client_id: i32,
-    interrupt_rx: tokio::sync::oneshot::Receiver<tokio::sync::oneshot::Sender<()>>,
-) -> i64 {
-    let chat_id = message.chat_id;
-    debug!("[{chat_id}] Handling message");
-    let mut handle = tokio::spawn(async move {
-        let now = time::Instant::now();
-        let text = message_text(&message).unwrap_or_else(|| "Salut".into());
-        let response = ollama::request(&model_name, &text).await?;
-        simulate_waiting(
-            &text,
-            &response,
-            now.elapsed(),
-            message.chat_id,
-            message.message_thread_id,
-            client_id,
-        )
-        .await?;
-        send_message(message, response.clone(), client_id).await?;
-        Ok(()) as AlterResult<()>
-    });
+// async fn cancelable_public_thought(
+//     model_name: String,
+//     message: Message,
+//     client_id: i32,
+//     interrupt_rx: tokio::sync::oneshot::Receiver<tokio::sync::oneshot::Sender<()>>,
+// ) -> i64 {
+//     let chat_id = message.chat_id;
+//     debug!("[{chat_id}] Handling message");
+//     let mut handle = tokio::spawn(async move {
+//         let now = time::Instant::now();
+//         let text = message_text(&message).unwrap_or_else(|| "Salut".into());
+//         let response = ollama::request(&model_name, &text).await?;
+//         simulate_waiting(
+//             &text,
+//             &response,
+//             now.elapsed(),
+//             message.chat_id,
+//             message.message_thread_id,
+//             client_id,
+//         )
+//         .await?;
+//         send_message(message, response.clone(), client_id).await?;
+//         Ok(()) as AlterResult<()>
+//     });
 
-    tokio::select! {
-        task_result = &mut handle => match task_result {
-            Ok(Ok(_)) => {},
-            Ok(Err(e)) => error!("[{chat_id}] Failed to handle message: {e:#?}"),
-            Err(e) => error!("[{chat_id}] Task failure: {e:#?}"),
-        },
-        Ok(interrupt_ack_tx) = interrupt_rx => {
-            handle.abort();
-            debug!("[{chat_id}] Interrupted");
-            let _ = interrupt_ack_tx.send(());
-        },
-    }
-    chat_id
-}
+//     tokio::select! {
+//         task_result = &mut handle => match task_result {
+//             Ok(Ok(_)) => {},
+//             Ok(Err(e)) => error!("[{chat_id}] Failed to handle message: {e:#?}"),
+//             Err(e) => error!("[{chat_id}] Task failure: {e:#?}"),
+//         },
+//         Ok(interrupt_ack_tx) = interrupt_rx => {
+//             handle.abort();
+//             debug!("[{chat_id}] Interrupted");
+//             let _ = interrupt_ack_tx.send(());
+//         },
+//     }
+//     chat_id
+// }
 
-async fn handle_private_message(
+async fn cancelable_private_thought(
     db: Arc<Mutex<Database>>,
     model_name: String,
     me_id: i64,

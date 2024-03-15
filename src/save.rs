@@ -4,7 +4,7 @@ use log::{debug, error, trace};
 use tdlib::{
     enums::{MessageContent, Update},
     functions,
-    types::{Message, UpdateDeleteMessages},
+    types::{Message, UpdateDeleteMessages, UpdateMessageSendSucceeded},
 };
 
 use crate::{
@@ -24,6 +24,19 @@ pub fn update(db: Arc<Mutex<Database>>, update: &Update, client_id: i32) {
             download_message_content(&message.message, client_id);
             db.save(&MessageWrapper::from(message.message.clone()))
         }
+        // https://github.com/tdlib/td/issues/511
+        Update::MessageSendSucceeded(UpdateMessageSendSucceeded {
+            message,
+            old_message_id,
+        }) => db
+            .lock()
+            .unwrap()
+            .execute(|conn| {
+                MessageWrapper::from(message.clone())
+                    .update_with_old_id(conn, *old_message_id)
+                    .map(|_| Vec::<MessageWrapper>::new())
+            })
+            .map(|_| ()),
         Update::DeleteMessages(UpdateDeleteMessages {
             from_cache: false,
             message_ids,

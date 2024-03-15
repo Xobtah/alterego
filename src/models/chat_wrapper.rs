@@ -45,7 +45,7 @@ impl AutoRequestable for ChatWrapper {
 
     fn create_table_request() -> String {
         r#"CREATE TABLE IF NOT EXISTS CHATS (
-            chat_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY,
             chat_type TEXT NOT NULL,
             title TEXT NOT NULL,
             photo TEXT,
@@ -88,7 +88,7 @@ impl AutoRequestable for ChatWrapper {
 
     fn from_row(row: &rusqlite::Row) -> Result<ChatWrapper, rusqlite::Error> {
         Ok(ChatWrapper(Chat {
-            id: row.get("chat_id")?,
+            id: row.get("id")?,
             r#type: serde_json::from_str(&row.get::<_, String>("chat_type")?).unwrap(),
             title: row.get("title")?,
             photo: serde_json::from_str(&row.get::<_, String>("photo")?).unwrap(),
@@ -137,10 +137,10 @@ impl AutoRequestable for ChatWrapper {
         conn: &rusqlite::Connection,
     ) -> AlterResult<Option<Self>> {
         Ok(conn
-            .prepare(r#"SELECT * FROM CHATS WHERE chat_id = :chat_id"#)?
+            .prepare(r#"SELECT * FROM CHATS WHERE id = :id"#)?
             .query_row(
                 rusqlite::named_params! {
-                    r#":chat_id"#: id,
+                    r#":id"#: id,
                 },
                 Self::from_row,
             )
@@ -159,7 +159,7 @@ impl AutoRequestable for ChatWrapper {
     fn insert(&self, conn: &rusqlite::Connection) -> AlterResult<()> {
         conn.execute(
             r#"INSERT INTO CHATS (
-            chat_id,
+            id,
             chat_type,
             title,
             photo,
@@ -192,7 +192,7 @@ impl AutoRequestable for ChatWrapper {
             draft_message,
             client_data
         ) VALUES (
-            :chat_id,
+            :id,
             :chat_type,
             :title,
             :photo,
@@ -227,7 +227,7 @@ impl AutoRequestable for ChatWrapper {
         )"#
             .into(),
             rusqlite::named_params! {
-                ":chat_id": &self.0.id,
+                ":id": &self.0.id,
                 ":chat_type": &serde_json::to_string(&self.0.r#type).unwrap(),
                 ":title": &self.0.title,
                 ":photo": &serde_json::to_string(&self.0.photo).unwrap(),
@@ -300,10 +300,10 @@ impl AutoRequestable for ChatWrapper {
                 draft_message = :draft_message,
                 client_data = :client_data
             WHERE
-                chat_id = :chat_id"#
+                id = :id"#
                 .into(),
                 rusqlite::named_params! {
-                    ":chat_id": &self.0.id,
+                    ":id": &self.0.id,
                     ":chat_type": &serde_json::to_string(&self.0.r#type).unwrap(),
                     ":title": &self.0.title,
                     ":photo": &serde_json::to_string(&self.0.photo).unwrap(),
