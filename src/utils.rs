@@ -5,6 +5,7 @@ use std::{
 
 use log::debug;
 use rand::Rng;
+use tdlib::{enums::MessageContent, types::Message};
 
 use crate::{
     database::Database,
@@ -46,4 +47,14 @@ pub fn chat_display_name(db: Arc<Mutex<Database>>, chat_id: i64) -> String {
         })
         .unwrap_or_default()
         .unwrap_or_else(|| chat_id.to_string())
+}
+
+pub fn message_text(message: &Message) -> Option<String> {
+    match &message.content {
+        MessageContent::MessageText(text) => Some(text.text.text.clone()),
+        MessageContent::MessagePhoto(photo) => Some(photo.caption.text.clone()),
+        MessageContent::MessageVideo(video) => Some(video.caption.text.clone()),
+        MessageContent::MessageAnimation(animation) => Some(animation.caption.text.clone()),
+        _ => None,
+    }
 }

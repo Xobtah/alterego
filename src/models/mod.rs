@@ -3,12 +3,13 @@ use rusqlite::Connection;
 use crate::error::AlterResult;
 
 use self::{
-    basic_group_wrapper::BasicGroupWrapper, chat_wrapper::ChatWrapper,
-    message_wrapper::MessageWrapper, supergroup_wrapper::SupergroupWrapper,
-    user_wrapper::UserWrapper,
+    basic_group_wrapper::BasicGroupWrapper, chat_llm_model::ChatLlmModel,
+    chat_wrapper::ChatWrapper, message_wrapper::MessageWrapper,
+    supergroup_wrapper::SupergroupWrapper, user_wrapper::UserWrapper,
 };
 
 pub mod basic_group_wrapper;
+pub mod chat_llm_model;
 pub mod chat_wrapper;
 pub mod message_wrapper;
 pub mod supergroup_wrapper;
@@ -40,9 +41,13 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         &BasicGroupWrapper::create_table_request(),
         rusqlite::params![],
     )?;
+    conn.execute(&ChatLlmModel::create_table_request(), rusqlite::params![])?;
     conn.execute(&ChatWrapper::create_table_request(), rusqlite::params![])?;
     conn.execute(&MessageWrapper::create_table_request(), rusqlite::params![])?;
-    conn.execute(&MessageWrapper::create_archive_table_request(), rusqlite::params![])?;
+    conn.execute(
+        &MessageWrapper::create_archive_table_request(),
+        rusqlite::params![],
+    )?;
     conn.execute(
         &SupergroupWrapper::create_table_request(),
         rusqlite::params![],

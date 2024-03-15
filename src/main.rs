@@ -4,7 +4,6 @@ use crate::application::Application;
 use clap::Parser;
 use database::Database;
 use error::AlterResult;
-use log::info;
 
 mod ai;
 mod application;
@@ -29,7 +28,6 @@ async fn main() -> AlterResult<()> {
     )
     .run(|update_rx, client_id, mut shutdown_rx| {
         Box::pin(async move {
-            info!("Starting application with model '{}'", args.model_name);
             let db = Arc::new(Mutex::new(db));
             let (message_tx, message_rx) = tokio::sync::mpsc::unbounded_channel();
             let ai_handle = tokio::spawn(ai::run(

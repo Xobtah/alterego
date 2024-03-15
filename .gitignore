@@ -19,3 +19,6 @@ Cargo.lock
 
 app.id
 app.hash
+*.sqlite
+Modelfile*
+db_*

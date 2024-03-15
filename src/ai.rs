@@ -6,18 +6,14 @@ use std::{
 
 use log::{debug, error, info};
 use tdlib::{
-    enums::{InputMessageContent, MessageContent, MessageReplyTo, MessageSender, User},
+    enums::{InputMessageContent, MessageReplyTo, MessageSender, User},
     functions,
     types::{FormattedText, InputMessageText, Message, MessageReplyToMessage, MessageSenderUser},
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::{
-    database::Database,
-    error::AlterResult,
-    models::{message_wrapper::MessageWrapper, AutoRequestable},
-    ollama::{self, OllamaMessage, OllamaRole},
-    utils,
+    database::Database, error::AlterResult, models::message_wrapper::MessageWrapper, ollama, utils,
 };
 
 const READING_WPM_MIN: f64 = 180.;
@@ -51,21 +47,15 @@ pub async fn run(
                                 "[{}] {}: {}",
                                 utils::chat_display_name(db.clone(), message.chat_id),
                                 utils::user_display_name(db.clone(), user_id),
-                                message_text(&message).unwrap_or_else(|| "(Not text)".into()),
+                                utils::message_text(&message).unwrap_or_else(|| "(Not text)".into()),
                             );
                             user_id
                         },
                         _ => continue,
                     };
 
-                    if message.chat_id < 0 {
-                        if let Some(usernames) = &me.usernames {
-                            if !message_text(&message).unwrap_or_default().contains(&format!("@{}", usernames.editable_username)) {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
+                    if !is_addressed_to_me(db.clone(), &me, &message) {
+                        continue;
                     }
 
                     if let Some(interrupt_tx) = thoughts.remove(&message.chat_id) {
@@ -78,12 +68,7 @@ pub async fn run(
 
                     let (interrupt_tx, interrupt_rx) = tokio::sync::oneshot::channel();
                     let chat_id = message.chat_id;
-                    if message.chat_id < 0 {
-                        // tokio::spawn(handle_group_message(model_name.clone(), message, client_id, interrupt_rx));
-                        continue;
-                    } else {
-                        tokio::spawn(cancelable_private_thought(db.clone(), model_name.clone(), me.id, message, client_id, interrupt_rx));
-                    }
+                    tokio::spawn(cancelable_thought(db.clone(), model_name.clone(), me.id, message, client_id, interrupt_rx));
                     thoughts.insert(chat_id, interrupt_tx);
                     Ok(())
                 } as AlterResult<()>;
@@ -103,47 +88,82 @@ pub async fn run(
     Ok(())
 }
 
-// async fn cancelable_public_thought(
-//     model_name: String,
-//     message: Message,
-//     client_id: i32,
-//     interrupt_rx: tokio::sync::oneshot::Receiver<tokio::sync::oneshot::Sender<()>>,
-// ) -> i64 {
-//     let chat_id = message.chat_id;
-//     debug!("[{chat_id}] Handling message");
-//     let mut handle = tokio::spawn(async move {
-//         let now = time::Instant::now();
-//         let text = message_text(&message).unwrap_or_else(|| "Salut".into());
-//         let response = ollama::request(&model_name, &text).await?;
-//         simulate_waiting(
-//             &text,
-//             &response,
-//             now.elapsed(),
-//             message.chat_id,
-//             message.message_thread_id,
-//             client_id,
-//         )
-//         .await?;
-//         send_message(message, response.clone(), client_id).await?;
-//         Ok(()) as AlterResult<()>
-//     });
+fn is_addressed_to_me(
+    db: Arc<Mutex<Database>>,
+    me: &tdlib::types::User,
+    message: &Message,
+) -> bool {
+    if message.chat_id < 0 {
+        if let Some(usernames) = &me.usernames {
+            utils::message_text(message)
+                .unwrap_or_default()
+                .contains(&format!("@{}", usernames.editable_username))
+        } else if let Some(MessageReplyTo::Message(MessageReplyToMessage { message_id, .. })) =
+            message.reply_to
+        {
+            match db.lock().unwrap().load::<MessageWrapper>(message_id) {
+                Ok(Some(reply_to)) => {
+                    if let MessageSender::User(MessageSenderUser { user_id }) =
+                        <MessageWrapper as Into<Message>>::into(reply_to).sender_id
+                    {
+                        user_id == me.id
+                    } else {
+                        false
+                    }
+                }
+                Ok(None) => false,
+                Err(e) => {
+                    error!("{e:#?}");
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    } else {
+        true
+    }
+}
 
-//     tokio::select! {
-//         task_result = &mut handle => match task_result {
-//             Ok(Ok(_)) => {},
-//             Ok(Err(e)) => error!("[{chat_id}] Failed to handle message: {e:#?}"),
-//             Err(e) => error!("[{chat_id}] Task failure: {e:#?}"),
-//         },
-//         Ok(interrupt_ack_tx) = interrupt_rx => {
-//             handle.abort();
-//             debug!("[{chat_id}] Interrupted");
-//             let _ = interrupt_ack_tx.send(());
-//         },
-//     }
-//     chat_id
-// }
+async fn thought(
+    db: Arc<Mutex<Database>>,
+    model_name: String,
+    me_id: i64,
+    message: Message,
+    client_id: i32,
+) -> AlterResult<()> {
+    let now = time::Instant::now();
+    let question = utils::message_text(&message).unwrap_or_else(|| "Salut".into());
+    let answer = if message.chat_id < 0 {
+        // Group chat
+        ollama::request(&model_name, &question).await?
+    } else {
+        // Private chat
+        functions::view_messages(
+            message.chat_id,
+            vec![message.id],
+            Some(tdlib::enums::MessageSource::Other),
+            true,
+            client_id,
+        )
+        .await?;
+        ollama::chat(db.clone(), me_id, message.chat_id, None, &model_name)
+            .await?
+            .content
+    };
+    simulate_waiting(
+        &question,
+        &answer,
+        now.elapsed(),
+        message.chat_id,
+        message.message_thread_id,
+        client_id,
+    )
+    .await?;
+    send_message(message, answer, client_id).await
+}
 
-async fn cancelable_private_thought(
+async fn cancelable_thought(
     db: Arc<Mutex<Database>>,
     model_name: String,
     me_id: i64,
@@ -153,93 +173,21 @@ async fn cancelable_private_thought(
 ) -> i64 {
     let chat_id = message.chat_id;
     debug!("[{chat_id}] Handling message");
-    let mut handle = tokio::spawn(async move {
-        functions::view_messages(
-            message.chat_id,
-            vec![message.id],
-            Some(tdlib::enums::MessageSource::Other),
-            true,
-            client_id,
-        )
-        .await?;
-        let now = time::Instant::now();
-        let response = ollama::chat(
-            &model_name,
-            &get_ollama_conversation(db.clone(), me_id, message.chat_id)?,
-        )
-        .await?;
-        simulate_waiting(
-            &message_text(&message).unwrap_or_else(|| "Salut".into()),
-            &response.content,
-            now.elapsed(),
-            message.chat_id,
-            message.message_thread_id,
-            client_id,
-        )
-        .await?;
-        send_message(message, response.content.clone(), client_id).await?;
-        Ok(()) as AlterResult<()>
-    });
+    let mut thought_handle = tokio::spawn(thought(db, model_name, me_id, message, client_id));
 
     tokio::select! {
-        task_result = &mut handle => match task_result {
+        task_result = &mut thought_handle => match task_result {
             Ok(Ok(_)) => {},
             Ok(Err(e)) => error!("[{chat_id}] Failed to handle message: {e:#?}"),
             Err(e) => error!("[{chat_id}] Task failure: {e:#?}"),
         },
         Ok(interrupt_ack_tx) = interrupt_rx => {
-            handle.abort();
+            thought_handle.abort();
             debug!("[{chat_id}] Interrupted");
             let _ = interrupt_ack_tx.send(());
         },
     }
     chat_id
-}
-
-fn get_ollama_conversation(
-    db: Arc<Mutex<Database>>,
-    assistant_id: i64,
-    chat_id: i64,
-) -> AlterResult<Vec<OllamaMessage>> {
-    Ok(db
-        .lock()
-        .unwrap()
-        .execute(|conn| {
-            Ok(conn
-                .prepare("SELECT * FROM MESSAGES WHERE chat_id = ?1")?
-                .query_map(
-                    rusqlite::params![chat_id],
-                    <MessageWrapper as AutoRequestable>::from_row,
-                )?
-                .filter_map(Result::ok)
-                .collect::<Vec<MessageWrapper>>())
-        })?
-        .into_iter()
-        .map(<MessageWrapper as Into<Message>>::into)
-        .map(|message| OllamaMessage {
-            role: match message.sender_id {
-                MessageSender::User(MessageSenderUser { user_id }) => {
-                    if user_id == assistant_id {
-                        OllamaRole::Assistant
-                    } else {
-                        OllamaRole::User
-                    }
-                }
-                MessageSender::Chat(_) => OllamaRole::System,
-            },
-            content: message_text(&message).unwrap_or_else(|| "Salut".into()),
-        })
-        .collect())
-}
-
-fn message_text(message: &Message) -> Option<String> {
-    match &message.content {
-        MessageContent::MessageText(text) => Some(text.text.text.clone()),
-        MessageContent::MessagePhoto(photo) => Some(photo.caption.text.clone()),
-        MessageContent::MessageVideo(video) => Some(video.caption.text.clone()),
-        MessageContent::MessageAnimation(animation) => Some(animation.caption.text.clone()),
-        _ => None,
-    }
 }
 
 async fn simulate_waiting(
